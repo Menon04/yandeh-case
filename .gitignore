@@ -47,3 +47,7 @@ docker-compose.override.yml
 # Misc
 .cache/
 tmp/
+
+#Prds que troquei ideia com a ia
+.prds
+
