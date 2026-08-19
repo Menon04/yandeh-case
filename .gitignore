@@ -51,3 +51,6 @@ tmp/
 #Prds que troquei ideia com a ia
 .prds
 
+# AgentMemory
+data/
+

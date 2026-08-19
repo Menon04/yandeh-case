@@ -7,8 +7,8 @@ import { sql } from "drizzle-orm";
 
 dotenv.config({ path: "../.env" });
 
-const BUYER_ID = "11111111-1111-1111-1111-111111111111";
-const SUPPLIER_ID = "22222222-2222-2222-2222-222222222222";
+const BUYER_ID = "11111111-1111-4111-8111-111111111111";
+const SUPPLIER_ID = "22222222-2222-4222-8222-222222222222";
 
 async function seed() {
   const connection = postgres(process.env.DATABASE_URL!, { max: 1 });
@@ -22,18 +22,18 @@ async function seed() {
   await db.insert(buyers).values({
     id: BUYER_ID,
     name: "Farmácia Central",
-  });
+  }).onConflictDoNothing();
 
   await db.insert(suppliers).values({
     id: SUPPLIER_ID,
     name: "Distribuidora Farma",
     minimumOrderValue: "100.00",
-  });
+  }).onConflictDoNothing();
 
   const productIds = [
-    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-    "cccccccc-cccc-cccc-cccc-cccccccccccc",
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   ];
 
   await db.insert(products).values([
@@ -55,7 +55,7 @@ async function seed() {
       name: "Ibuprofeno 400mg",
       description: "Comprimido de ibuprofeno 400mg - caixa com 30",
     },
-  ]);
+  ]).onConflictDoNothing();
 
   await db.insert(priceTiers).values([
     { productId: productIds[0], minQty: 1, maxQty: 9, price: "15.00" },
@@ -69,7 +69,7 @@ async function seed() {
     { productId: productIds[2], minQty: 1, maxQty: 9, price: "25.00" },
     { productId: productIds[2], minQty: 10, maxQty: 49, price: "22.00" },
     { productId: productIds[2], minQty: 50, maxQty: null, price: "18.00" },
-  ]);
+  ]).onConflictDoNothing();
 
   console.log("Seed complete!");
   console.log(`  Buyer: ${BUYER_ID} (Farmácia Central)`);

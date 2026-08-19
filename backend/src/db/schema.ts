@@ -83,6 +83,7 @@ export const orders = pgTable(
       .references(() => suppliers.id),
     total: numeric("total", { precision: 10, scale: 2 }).notNull(),
     status: varchar("status", { length: 20 }).notNull().default("closed"),
+    idempotencyKey: uuid("idempotency_key").unique(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
