@@ -1,6 +1,6 @@
 import { db } from "../db/index.js";
 import { products, priceTiers, orderItems } from "../db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   PriceTierInput,
   validateTierRanges,
@@ -19,24 +19,31 @@ export async function listProducts(supplierId: string) {
     .from(products)
     .where(eq(products.supplierId, supplierId));
 
-  const result = [];
-  for (const p of allProducts) {
-    const tiers = await db
-      .select()
-      .from(priceTiers)
-      .where(eq(priceTiers.productId, p.id))
-      .orderBy(priceTiers.minQty);
+  const productIds = allProducts.map((p) => p.id);
+  const allTiers =
+    productIds.length > 0
+      ? await db
+          .select()
+          .from(priceTiers)
+          .where(inArray(priceTiers.productId, productIds))
+      : [];
 
-    result.push({
-      ...p,
-      priceTiers: tiers.map((t) => ({
+  const tiersByProductId = new Map<string, typeof allTiers>();
+  for (const tier of allTiers) {
+    const existing = tiersByProductId.get(tier.productId) || [];
+    existing.push(tier);
+    tiersByProductId.set(tier.productId, existing);
+  }
+
+  return allProducts.map((p) => ({
+    ...p,
+    priceTiers: (tiersByProductId.get(p.id) || [])
+      .sort((a, b) => a.minQty - b.minQty)
+      .map((t) => ({
         ...t,
         price: parseFloat(t.price),
       })),
-    });
-  }
-
-  return result;
+  }));
 }
 
 export async function getProduct(productId: string) {

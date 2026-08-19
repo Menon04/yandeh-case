@@ -4,31 +4,39 @@ import * as orderService from "../services/orderService.js";
 
 const router = Router();
 
-const FIXED_BUYER_ID = "11111111-1111-4111-8111-111111111111";
-const FIXED_SUPPLIER_ID = "22222222-2222-4222-8222-222222222222";
-
 const orderItemSchema = z.object({
-  productId: z.string().uuid(),
+  product_id: z.string().uuid(),
   quantity: z.number().int().min(1),
 });
 
 const createOrderSchema = z.object({
+  buyer_id: z.string().uuid(),
+  supplier_id: z.string().uuid(),
   items: z.array(orderItemSchema).min(1),
 });
 
 router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const input = createOrderSchema.parse(req.body);
-    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    const idempotencyKey = req.headers["idempotency-key"];
+    if (!idempotencyKey || typeof idempotencyKey !== "string") {
+      return res.status(400).json({
+        error: "Header Idempotency-Key é obrigatório",
+      });
+    }
 
-    const order = await orderService.createOrder({
-      buyerId: FIXED_BUYER_ID,
-      supplierId: FIXED_SUPPLIER_ID,
-      items: input.items,
+    const input = createOrderSchema.parse(req.body);
+
+    const result = await orderService.createOrder({
+      buyerId: input.buyer_id,
+      supplierId: input.supplier_id,
+      items: input.items.map((i) => ({
+        productId: i.product_id,
+        quantity: i.quantity,
+      })),
       idempotencyKey,
     });
 
-    res.status(201).json(order);
+    res.status(result.isNew ? 201 : 200).json(result.order);
   } catch (err) {
     next(err);
   }
@@ -42,8 +50,6 @@ router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
     const to = _req.query.to ? new Date(_req.query.to as string) : undefined;
 
     const orders = await orderService.listOrders({
-      buyerId: FIXED_BUYER_ID,
-      supplierId: FIXED_SUPPLIER_ID,
       from,
       to,
     });

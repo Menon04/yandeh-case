@@ -28,17 +28,26 @@ export interface ValidationResult {
 export function resolveTierPrice(
   tiers: PriceTier[],
   quantity: number
-): { price: number; tierId: string } | null {
+): number | null {
   const tier = tiers.find(
     (t) => quantity >= t.minQty && (t.maxQty === null || quantity <= t.maxQty)
   );
 
   if (!tier) return null;
 
-  return {
-    price: parseFloat(tier.price),
-    tierId: tier.id,
-  };
+  return parseFloat(tier.price);
+}
+
+export function resolveTier(
+  tiers: PriceTier[],
+  quantity: number
+): PriceTier | null {
+  return (
+    tiers.find(
+      (t) =>
+        quantity >= t.minQty && (t.maxQty === null || quantity <= t.maxQty)
+    ) ?? null
+  );
 }
 
 export function calculateItemSubtotal(

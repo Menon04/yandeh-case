@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveTierPrice,
+  resolveTier,
   calculateItemSubtotal,
   calculateOrderTotal,
   isAboveMinimum,
@@ -16,21 +17,21 @@ describe("resolveTierPrice", () => {
     { id: "3", productId: "p1", minQty: 50, maxQty: null, price: "10.00" },
   ];
 
-  it("returns correct tier for qty 1-9", () => {
-    expect(resolveTierPrice(tiers, 1)).toEqual({ price: 15, tierId: "1" });
-    expect(resolveTierPrice(tiers, 5)).toEqual({ price: 15, tierId: "1" });
-    expect(resolveTierPrice(tiers, 9)).toEqual({ price: 15, tierId: "1" });
+  it("returns correct price for qty 1-9", () => {
+    expect(resolveTierPrice(tiers, 1)).toBe(15);
+    expect(resolveTierPrice(tiers, 5)).toBe(15);
+    expect(resolveTierPrice(tiers, 9)).toBe(15);
   });
 
-  it("returns correct tier for qty 10-49", () => {
-    expect(resolveTierPrice(tiers, 10)).toEqual({ price: 12.5, tierId: "2" });
-    expect(resolveTierPrice(tiers, 25)).toEqual({ price: 12.5, tierId: "2" });
-    expect(resolveTierPrice(tiers, 49)).toEqual({ price: 12.5, tierId: "2" });
+  it("returns correct price for qty 10-49", () => {
+    expect(resolveTierPrice(tiers, 10)).toBe(12.5);
+    expect(resolveTierPrice(tiers, 25)).toBe(12.5);
+    expect(resolveTierPrice(tiers, 49)).toBe(12.5);
   });
 
-  it("returns correct tier for qty 50+ (null maxQty)", () => {
-    expect(resolveTierPrice(tiers, 50)).toEqual({ price: 10, tierId: "3" });
-    expect(resolveTierPrice(tiers, 1000)).toEqual({ price: 10, tierId: "3" });
+  it("returns correct price for qty 50+ (null maxQty)", () => {
+    expect(resolveTierPrice(tiers, 50)).toBe(10);
+    expect(resolveTierPrice(tiers, 1000)).toBe(10);
   });
 
   it("returns null when no tier covers quantity", () => {
@@ -43,6 +44,22 @@ describe("resolveTierPrice", () => {
 
   it("returns null for empty tiers", () => {
     expect(resolveTierPrice([], 5)).toBeNull();
+  });
+});
+
+describe("resolveTier", () => {
+  const tiers: PriceTier[] = [
+    { id: "1", productId: "p1", minQty: 1, maxQty: 9, price: "15.00" },
+    { id: "2", productId: "p1", minQty: 10, maxQty: 49, price: "12.50" },
+  ];
+
+  it("returns full tier object", () => {
+    expect(resolveTier(tiers, 5)).toEqual(tiers[0]);
+    expect(resolveTier(tiers, 10)).toEqual(tiers[1]);
+  });
+
+  it("returns null when no match", () => {
+    expect(resolveTier(tiers, 100)).toBeNull();
   });
 });
 

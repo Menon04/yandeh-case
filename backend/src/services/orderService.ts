@@ -1,8 +1,8 @@
 import { db } from "../db/index.js";
 import { orders, orderItems, products, priceTiers, buyers, suppliers } from "../db/schema.js";
-import { eq, and, inArray, sql, gte, lte } from "drizzle-orm";
+import { eq, and, inArray, gte, lte } from "drizzle-orm";
 import {
-  resolveTierPrice,
+  resolveTier,
   calculateItemSubtotal,
   calculateOrderTotal,
   isAboveMinimum,
@@ -19,10 +19,13 @@ export interface CreateOrderInput {
   buyerId: string;
   supplierId: string;
   items: OrderItemInput[];
-  idempotencyKey?: string;
+  idempotencyKey: string;
 }
 
-export async function createOrder(input: CreateOrderInput) {
+export async function createOrder(input: CreateOrderInput): Promise<{
+  order: Record<string, unknown>;
+  isNew: boolean;
+}> {
   if (input.items.length === 0) {
     throw new AppError(400, "Pedido precisa ter ao menos um item");
   }
@@ -36,20 +39,21 @@ export async function createOrder(input: CreateOrderInput) {
   }
 
   return db.transaction(async (tx) => {
-    if (input.idempotencyKey) {
-      const [existing] = await tx
+    const [existing] = await tx
+      .select()
+      .from(orders)
+      .where(eq(orders.idempotencyKey, input.idempotencyKey))
+      .limit(1);
+
+    if (existing) {
+      const items = await tx
         .select()
-        .from(orders)
-        .where(eq(orders.idempotencyKey, input.idempotencyKey))
-        .limit(1);
+        .from(orderItems)
+        .where(eq(orderItems.orderId, existing.id));
 
-      if (existing) {
-        const items = await tx
-          .select()
-          .from(orderItems)
-          .where(eq(orderItems.orderId, existing.id));
-
-        return {
+      return {
+        isNew: false,
+        order: {
           ...existing,
           total: parseFloat(existing.total),
           items: items.map((i) => ({
@@ -57,8 +61,8 @@ export async function createOrder(input: CreateOrderInput) {
             unitPriceApplied: parseFloat(i.unitPriceApplied),
             subtotal: parseFloat(i.subtotal),
           })),
-        };
-      }
+        },
+      };
     }
 
     const [buyer] = await tx
@@ -67,18 +71,14 @@ export async function createOrder(input: CreateOrderInput) {
       .where(eq(buyers.id, input.buyerId))
       .limit(1);
 
-    if (!buyer) {
-      throw new AppError(404, "Comprador não encontrado");
-    }
-
     const [supplier] = await tx
       .select()
       .from(suppliers)
       .where(eq(suppliers.id, input.supplierId))
       .limit(1);
 
-    if (!supplier) {
-      throw new AppError(404, "Fornecedor não encontrado");
+    if (!buyer || !supplier) {
+      throw new AppError(404, "Comprador ou fornecedor não encontrado");
     }
 
     const productIds = input.items.map((i) => i.productId);
@@ -116,9 +116,9 @@ export async function createOrder(input: CreateOrderInput) {
 
     for (const item of input.items) {
       const tiers = tiersByProduct.get(item.productId) || [];
-      const resolved = resolveTierPrice(tiers, item.quantity);
+      const tier = resolveTier(tiers, item.quantity);
 
-      if (!resolved) {
+      if (!tier) {
         throw new AppError(
           422,
           "Não há faixa de preço para essa quantidade",
@@ -129,14 +129,15 @@ export async function createOrder(input: CreateOrderInput) {
         );
       }
 
-      const subtotal = calculateItemSubtotal(resolved.price, item.quantity);
+      const unitPrice = parseFloat(tier.price);
+      const subtotal = calculateItemSubtotal(unitPrice, item.quantity);
 
       calculatedItems.push({
         productId: item.productId,
         quantity: item.quantity,
-        unitPrice: resolved.price,
+        unitPrice,
         subtotal,
-        priceTierId: resolved.tierId,
+        priceTierId: tier.id,
       });
     }
 
@@ -175,13 +176,16 @@ export async function createOrder(input: CreateOrderInput) {
       .returning();
 
     return {
-      ...order,
-      total: parseFloat(order.total),
-      items: insertedItems.map((i) => ({
-        ...i,
-        unitPriceApplied: parseFloat(i.unitPriceApplied),
-        subtotal: parseFloat(i.subtotal),
-      })),
+      isNew: true,
+      order: {
+        ...order,
+        total: parseFloat(order.total),
+        items: insertedItems.map((i) => ({
+          ...i,
+          unitPriceApplied: parseFloat(i.unitPriceApplied),
+          subtotal: parseFloat(i.subtotal),
+        })),
+      },
     };
   });
 }
