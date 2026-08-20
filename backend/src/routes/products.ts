@@ -7,15 +7,15 @@ const router = Router();
 const FIXED_SUPPLIER_ID = "22222222-2222-4222-8222-222222222222";
 
 const priceTierSchema = z.object({
-  min_qty: z.number().int().min(1),
-  max_qty: z.number().int().min(1).nullable(),
+  minQty: z.number().int().min(1),
+  maxQty: z.number().int().min(1).nullable(),
   price: z.number().positive(),
 });
 
 const createProductSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  price_tiers: z.array(priceTierSchema).min(1),
+  priceTiers: z.array(priceTierSchema).min(1),
 });
 
 router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
@@ -42,15 +42,7 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
 router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = createProductSchema.parse(req.body);
-    const product = await productService.createProduct(FIXED_SUPPLIER_ID, {
-      name: input.name,
-      description: input.description,
-      priceTiers: input.price_tiers.map((t) => ({
-        minQty: t.min_qty,
-        maxQty: t.max_qty,
-        price: t.price,
-      })),
-    });
+    const product = await productService.createProduct(FIXED_SUPPLIER_ID, input);
     res.status(201).json(product);
   } catch (err) {
     next(err);
@@ -60,15 +52,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
 router.put("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = createProductSchema.parse(req.body);
-    const product = await productService.updateProduct(req.params.id as string, {
-      name: input.name,
-      description: input.description,
-      priceTiers: input.price_tiers.map((t) => ({
-        minQty: t.min_qty,
-        maxQty: t.max_qty,
-        price: t.price,
-      })),
-    });
+    const product = await productService.updateProduct(req.params.id as string, input);
     res.json(product);
   } catch (err) {
     next(err);

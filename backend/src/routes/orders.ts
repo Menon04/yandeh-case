@@ -5,14 +5,31 @@ import * as orderService from "../services/orderService.js";
 const router = Router();
 
 const orderItemSchema = z.object({
-  product_id: z.string().uuid(),
+  productId: z.string().uuid(),
   quantity: z.number().int().min(1),
 });
 
 const createOrderSchema = z.object({
-  buyer_id: z.string().uuid(),
-  supplier_id: z.string().uuid(),
+  buyerId: z.string().uuid(),
+  supplierId: z.string().uuid(),
   items: z.array(orderItemSchema).min(1),
+});
+
+router.post("/preview", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = createOrderSchema.parse(req.body);
+
+    const preview = await orderService.previewOrder({
+      buyerId: input.buyerId,
+      supplierId: input.supplierId,
+      items: input.items,
+      idempotencyKey: "",
+    });
+
+    res.json(preview);
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post("/", async (req: Request, res: Response, next: NextFunction) => {
@@ -27,12 +44,9 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
     const input = createOrderSchema.parse(req.body);
 
     const result = await orderService.createOrder({
-      buyerId: input.buyer_id,
-      supplierId: input.supplier_id,
-      items: input.items.map((i) => ({
-        productId: i.product_id,
-        quantity: i.quantity,
-      })),
+      buyerId: input.buyerId,
+      supplierId: input.supplierId,
+      items: input.items,
       idempotencyKey,
     });
 

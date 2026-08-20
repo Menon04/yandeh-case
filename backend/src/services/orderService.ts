@@ -5,7 +5,7 @@ import {
   resolveTier,
   calculateItemSubtotal,
   calculateOrderTotal,
-  isAboveMinimum,
+  isAboveMinimum as isAboveMinimumFn,
   OrderItemCalculated,
 } from "../domain/pricing.js";
 import { AppError } from "../middleware/errorHandler.js";
@@ -19,7 +19,7 @@ export interface CreateOrderInput {
   buyerId: string;
   supplierId: string;
   items: OrderItemInput[];
-  idempotencyKey: string;
+  idempotencyKey?: string;
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<{
@@ -33,36 +33,38 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   for (const item of input.items) {
     if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
       throw new AppError(400, "Quantidade inválida", {
-        product_id: item.productId,
+        productId: item.productId,
       });
     }
   }
 
   return db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select()
-      .from(orders)
-      .where(eq(orders.idempotencyKey, input.idempotencyKey))
-      .limit(1);
-
-    if (existing) {
-      const items = await tx
+    if (input.idempotencyKey) {
+      const [existing] = await tx
         .select()
-        .from(orderItems)
-        .where(eq(orderItems.orderId, existing.id));
+        .from(orders)
+        .where(eq(orders.idempotencyKey, input.idempotencyKey))
+        .limit(1);
 
-      return {
-        isNew: false,
-        order: {
-          ...existing,
-          total: parseFloat(existing.total),
-          items: items.map((i) => ({
-            ...i,
-            unitPriceApplied: parseFloat(i.unitPriceApplied),
-            subtotal: parseFloat(i.subtotal),
-          })),
-        },
-      };
+      if (existing) {
+        const items = await tx
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existing.id));
+
+        return {
+          isNew: false,
+          order: {
+            ...existing,
+            total: parseFloat(existing.total),
+            items: items.map((i) => ({
+              ...i,
+              unitPriceApplied: parseFloat(i.unitPriceApplied),
+              subtotal: parseFloat(i.subtotal),
+            })),
+          },
+        };
+      }
     }
 
     const [buyer] = await tx
@@ -96,7 +98,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{
       const foundIds = new Set(allProducts.map((p) => p.id));
       const missing = productIds.find((id) => !foundIds.has(id));
       throw new AppError(404, "Produto não encontrado", {
-        product_id: missing,
+        productId: missing,
       });
     }
 
@@ -123,7 +125,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{
           422,
           "Não há faixa de preço para essa quantidade",
           {
-            product_id: item.productId,
+            productId: item.productId,
             quantity: item.quantity,
           }
         );
@@ -144,7 +146,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     const total = calculateOrderTotal(calculatedItems);
     const minimum = parseFloat(supplier.minimumOrderValue);
 
-    if (!isAboveMinimum(total, minimum)) {
+    if (!isAboveMinimumFn(total, minimum)) {
       throw new AppError(422, "Pedido abaixo do mínimo", {
         total,
         minimum,
@@ -266,5 +268,131 @@ export async function getOrder(orderId: string) {
       unitPriceApplied: parseFloat(i.unitPriceApplied),
       subtotal: parseFloat(i.subtotal),
     })),
+  };
+}
+
+export async function previewOrder(input: CreateOrderInput) {
+  if (input.items.length === 0) {
+    throw new AppError(400, "Pedido precisa ter ao menos um item");
+  }
+
+  for (const item of input.items) {
+    if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+      throw new AppError(400, "Quantidade inválida", {
+        productId: item.productId,
+      });
+    }
+  }
+
+  const [supplier] = await db
+    .select()
+    .from(suppliers)
+    .where(eq(suppliers.id, input.supplierId))
+    .limit(1);
+
+  if (!supplier) {
+    throw new AppError(404, "Fornecedor não encontrado");
+  }
+
+  const productIds = input.items.map((i) => i.productId);
+  const allProducts = await db
+    .select()
+    .from(products)
+    .where(
+      and(
+        inArray(products.id, productIds),
+        eq(products.supplierId, input.supplierId)
+      )
+    );
+
+  if (allProducts.length !== productIds.length) {
+    const foundIds = new Set(allProducts.map((p) => p.id));
+    const missing = productIds.find((id) => !foundIds.has(id));
+    throw new AppError(404, "Produto não encontrado", {
+      productId: missing,
+    });
+  }
+
+  const productsById = new Map(allProducts.map((p) => [p.id, p]));
+
+  const allTiers = await db
+    .select()
+    .from(priceTiers)
+    .where(inArray(priceTiers.productId, productIds));
+
+  const tiersByProduct = new Map<string, typeof allTiers>();
+  for (const tier of allTiers) {
+    const existing = tiersByProduct.get(tier.productId) || [];
+    existing.push(tier);
+    tiersByProduct.set(tier.productId, existing);
+  }
+
+  const previewItems = [];
+
+  for (const item of input.items) {
+    const tiers = tiersByProduct.get(item.productId) || [];
+    const tier = resolveTier(tiers, item.quantity);
+    const product = productsById.get(item.productId);
+
+    if (!tier) {
+      // Não interrompe o preview inteiro por causa de um item sem faixa de
+      // preço válida para a quantidade atual (ex.: quantidade abaixo do
+      // mínimo do produto). O item volta marcado com o erro para a UI poder
+      // sinalizar o problema nele, em vez de travar a exibição do carrinho
+      // inteiro enquanto o usuário ajusta a quantidade.
+      const minQuantity = tiers.length
+        ? Math.min(...tiers.map((t) => t.minQty))
+        : null;
+
+      previewItems.push({
+        productId: item.productId,
+        productName: product?.name || "Produto",
+        quantity: item.quantity,
+        unitPrice: null,
+        subtotal: 0,
+        priceError: "Não há faixa de preço para essa quantidade",
+        minQuantity,
+      });
+      continue;
+    }
+
+    const unitPrice = parseFloat(tier.price);
+    const subtotal = calculateItemSubtotal(unitPrice, item.quantity);
+
+    previewItems.push({
+      productId: item.productId,
+      productName: product?.name || "Produto",
+      quantity: item.quantity,
+      unitPrice,
+      subtotal,
+    });
+  }
+
+  const hasPriceErrors = previewItems.some((i) => i.priceError);
+
+  const total = calculateOrderTotal(
+    previewItems.map((i) => ({
+      productId: i.productId,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice ?? 0,
+      subtotal: i.subtotal,
+      priceTierId: null,
+    }))
+  );
+
+  const minimumOrderValue = parseFloat(supplier.minimumOrderValue);
+  // Um item sem preço válido bloqueia o fechamento do pedido mesmo que o
+  // total já pareça acima do mínimo.
+  const isAboveMinimum =
+    !hasPriceErrors && isAboveMinimumFn(total, minimumOrderValue);
+  const missingAmount = isAboveMinimum ? 0 : minimumOrderValue - total;
+
+  return {
+    items: previewItems,
+    total,
+    minimumOrderValue,
+    isAboveMinimum,
+    hasPriceErrors,
+    missingAmount: Math.round(Math.max(missingAmount, 0) * 100) / 100,
   };
 }

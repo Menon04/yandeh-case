@@ -16,5 +16,25 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build: ./backend
+    container_name: yandeh-backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yandeh}:${POSTGRES_PASSWORD:-yandeh}@postgres:5432/${POSTGRES_DB:-yandeh_marketplace}
+      PORT: 3000
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: yandeh-frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
