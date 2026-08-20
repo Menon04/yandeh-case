@@ -49,7 +49,10 @@ docker compose up --build -d
 docker compose down -v && docker compose up -d
 ```
 
-## Desenvolvimento Local
+## Desenvolvimento Local (sem Docker)
+
+As imagens Docker fazem apenas build (não há hot-reload via volume montado), então para
+iterar com reload automático rode os serviços fora do container:
 
 ### Backend
 
@@ -88,16 +91,35 @@ npm run dev
 └── docker-compose.yml
 ```
 
-## Documentação
-
-- [BACKEND.md](./BACKEND.md) - Detalhes da implementação do backend
-- [DECISIONS.md](./DECISIONS.md) - Decisões arquiteturais
-
 ## Testes
+
+Com os serviços já de pé via `docker compose up -d`, rode direto no container do backend
+(não precisa de `npm install` local):
+
+```bash
+docker compose exec backend npm test
+```
+
+Se preferir rodar localmente (fora do Docker), veja [Desenvolvimento Local](#desenvolvimento-local-sem-docker):
 
 ```bash
 cd backend
+npm install
 npm test
+```
+
+## Comandos úteis (dentro dos containers)
+
+```bash
+# Rodar a seed novamente (já roda automaticamente ao subir o backend)
+docker compose exec backend npm run db:seed
+
+# Abrir um shell no container do backend
+docker compose exec backend sh
+
+# Ver logs de um serviço específico
+docker compose logs -f backend
+docker compose logs -f frontend
 ```
 
 ## Seed Data
