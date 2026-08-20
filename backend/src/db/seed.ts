@@ -3,7 +3,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import dotenv from "dotenv";
 import { buyers, suppliers, products, priceTiers } from "./schema.js";
-import { sql } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 
 dotenv.config({ path: "../.env" });
 
@@ -57,19 +57,35 @@ async function seed() {
     },
   ]).onConflictDoNothing();
 
-  await db.insert(priceTiers).values([
-    { productId: productIds[0], minQty: 1, maxQty: 9, price: "15.00" },
-    { productId: productIds[0], minQty: 10, maxQty: 49, price: "12.50" },
-    { productId: productIds[0], minQty: 50, maxQty: null, price: "10.00" },
+  // price_tiers não tem um ID previsível nem uma constraint única pra
+  // (productId, minQty) — então onConflictDoNothing() aqui nunca colide com
+  // nada, e rodar o seed mais de uma vez (ex.: a cada restart do container,
+  // já que o Dockerfile chama esse script no boot) duplicava as faixas de
+  // preço a cada execução. Só inserimos se ainda não existir nenhuma faixa
+  // para esses produtos.
+  const existingTiers = await db
+    .select({ productId: priceTiers.productId })
+    .from(priceTiers)
+    .where(inArray(priceTiers.productId, productIds))
+    .limit(1);
 
-    { productId: productIds[1], minQty: 1, maxQty: 9, price: "20.00" },
-    { productId: productIds[1], minQty: 10, maxQty: 49, price: "17.00" },
-    { productId: productIds[1], minQty: 50, maxQty: null, price: "14.00" },
+  if (existingTiers.length === 0) {
+    await db.insert(priceTiers).values([
+      { productId: productIds[0], minQty: 1, maxQty: 9, price: "15.00" },
+      { productId: productIds[0], minQty: 10, maxQty: 49, price: "12.50" },
+      { productId: productIds[0], minQty: 50, maxQty: null, price: "10.00" },
 
-    { productId: productIds[2], minQty: 1, maxQty: 9, price: "25.00" },
-    { productId: productIds[2], minQty: 10, maxQty: 49, price: "22.00" },
-    { productId: productIds[2], minQty: 50, maxQty: null, price: "18.00" },
-  ]).onConflictDoNothing();
+      { productId: productIds[1], minQty: 1, maxQty: 9, price: "20.00" },
+      { productId: productIds[1], minQty: 10, maxQty: 49, price: "17.00" },
+      { productId: productIds[1], minQty: 50, maxQty: null, price: "14.00" },
+
+      { productId: productIds[2], minQty: 1, maxQty: 9, price: "25.00" },
+      { productId: productIds[2], minQty: 10, maxQty: 49, price: "22.00" },
+      { productId: productIds[2], minQty: 50, maxQty: null, price: "18.00" },
+    ]);
+  } else {
+    console.log("Price tiers já existem, pulando.");
+  }
 
   console.log("Seed complete!");
   console.log(`  Buyer: ${BUYER_ID} (Farmácia Central)`);
